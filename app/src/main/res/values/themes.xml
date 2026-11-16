@@ -1,0 +1,20 @@
+<resources>
+    <!--
+        App theme. The ".Bridge" variant keeps the existing AppCompat look of buttons/inputs while
+        providing the Material attributes needed by FloatingActionButton and AppBarLayout.
+        Layouts use fixed light colours, so the app intentionally stays in light mode.
+    -->
+    <style name="Theme.GAP" parent="Theme.MaterialComponents.Light.NoActionBar.Bridge">
+        <item name="colorPrimary">@color/brand_green</item>
+        <item name="colorPrimaryDark">@color/brand_green_dark</item>
+        <item name="colorAccent">@color/brand_green</item>
+        <item name="colorSecondary">@color/brand_green</item>
+    </style>
+
+    <!-- Launch theme used by androidx.core:core-splashscreen on the launcher activity. -->
+    <style name="Theme.GAP.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/brand_green</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/applogo</item>
+        <item name="postSplashScreenTheme">@style/Theme.GAP</item>
+    </style>
+</resources>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Map tiles for the address location picker. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- "Use my location" on the map picker; requested at runtime only when the user taps it. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Package visibility (Android 11+): lets PaymentActivity detect installed UPI apps. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" />
+        </intent>
+    </queries>
+
+    <!--
+        allowBackup=false + dataExtractionRules: the local database holds account data, so it is
+        excluded from cloud backups and device-to-device transfers.
+    -->
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
+        android:icon="@drawable/applogo"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/applogo"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GAP">
+
+        <!-- Google Maps key, injected from local.properties at build time (never committed). -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
+
+        <!-- Login is the launcher; it shows the system splash screen via Theme.GAP.Starting. -->
+        <activity
+            android:name=".LoginActivity"
+            android:exported="true"
+            android:theme="@style/Theme.GAP.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".RegisterActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AddressSetupActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AddressManagementActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AddAddressActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".MapLocationActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".CartActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PaymentActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PastOrdersActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".OrderDetailsActivity"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

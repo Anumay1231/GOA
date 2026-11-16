@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Grocery Store</string>
+    <!-- %1$s = formatted price (e.g. ₹40), %2$s = unit (kg, bunch, piece) -->
+    <string name="price_format">%1$s per %2$s</string>
+
+    <!-- Payee for UPI payments. Must match the QR in drawable-nodpi/upi_qr.png. -->
+    <string name="upi_payee_vpa" translatable="false">anumay.marshmelo@okhdfcbank</string>
+    <string name="upi_payee_name" translatable="false">Anumay Pandey</string>
+
+    <!-- Address Labels -->
+    <string-array name="address_labels">
+        <item>Home</item>
+        <item>Office</item>
+        <item>Other</item>
+    </string-array>
+</resources>

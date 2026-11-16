@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Side padding for screen content. Grows on wider windows (tablets, foldables, landscape,
+        desktop windows) so lists and forms don't stretch edge to edge. Android 17 no longer lets
+        apps lock orientation/size on large screens, so every screen must work at any width.
+    -->
+    <dimen name="screen_h_padding">16dp</dimen>
+</resources>
