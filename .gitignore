@@ -1,0 +1,19 @@
+# Gradle / build output
+.gradle
+/build
+/captures
+.externalNativeBuild
+.cxx
+.kotlin
+
+# Machine-specific
+local.properties
+*.iml
+.DS_Store
+
+# Android Studio settings (per-developer)
+/.idea/
+
+# Full-resolution originals of the product photos (40 MB). The app uses the resized copies
+# in app/src/main/res/drawable-nodpi; keep the originals locally, out of the repo.
+/original_images/

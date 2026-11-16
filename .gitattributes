@@ -1,0 +1,10 @@
+# Normalise line endings in the repo; keep scripts runnable on every OS.
+* text=auto
+gradlew text eol=lf
+*.bat text eol=crlf
+
+# Binary files
+*.jar binary
+*.png binary
+*.jpg binary
+*.webp binary
