@@ -9,10 +9,16 @@ import android.database.sqlite.SQLiteOpenHelper;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
 
@@ -89,6 +95,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return new DatabaseHelper(context.getApplicationContext(), null);
     }
 
+    /** Opens (and upgrades if needed) a named database file; used by tests of the upgrade path. */
+    @VisibleForTesting
+    static DatabaseHelper openForTest(Context context, String name) {
+        return new DatabaseHelper(context.getApplicationContext(), name);
+    }
+
     private DatabaseHelper(Context context) {
         this(context, DATABASE_NAME);
     }
@@ -157,55 +169,159 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 TABLE_ORDER + "(" + COL_ORDER_ID + ") ON DELETE CASCADE)");
     }
 
+    /**
+     * Brings any older database up to the current schema without losing data.
+     *
+     * Older builds of this app shipped different layouts under the same version numbers (for
+     * example an earlier release used version 2 with a differently named orders table and map
+     * columns already on addresses). So instead of trusting {@code oldVersion}, each step looks at
+     * what is actually in the database and only changes what is missing. Every step is idempotent.
+     */
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // Migrate step by step instead of dropping tables, so user data survives upgrades.
-        if (oldVersion < 2) {
-            // Remove the seeded test account ("user" / "password") that v1 shipped with.
-            try (Cursor c = db.query(TABLE_CUSTOMER, new String[]{COL_CUSTOMER_ID},
-                    COL_USERNAME + "=? AND " + COL_PASSWORD + "=?",
-                    new String[]{"user", "password"}, null, null, null)) {
-                while (c.moveToNext()) {
-                    String id = String.valueOf(c.getInt(0));
-                    db.delete(TABLE_ADDRESS, COL_ADDRESS_CUSTOMER_ID + "=?", new String[]{id});
-                    db.delete(TABLE_CUSTOMER, COL_CUSTOMER_ID + "=?", new String[]{id});
-                }
-            }
+        removeSeededTestAccount(db);
+        hashPlainTextPasswords(db);
 
-            // Hash any remaining plain-text passwords.
-            Map<Integer, String> plain = new HashMap<>();
-            try (Cursor c = db.query(TABLE_CUSTOMER, new String[]{COL_CUSTOMER_ID, COL_PASSWORD},
-                    null, null, null, null, null)) {
-                while (c.moveToNext()) {
-                    String pw = c.getString(1);
-                    if (!PasswordHasher.isHashed(pw)) {
-                        plain.put(c.getInt(0), pw);
-                    }
-                }
-            }
-            for (Map.Entry<Integer, String> e : plain.entrySet()) {
-                ContentValues cv = new ContentValues();
-                cv.put(COL_PASSWORD, PasswordHasher.hash(e.getValue()));
-                db.update(TABLE_CUSTOMER, cv, COL_CUSTOMER_ID + "=?",
-                        new String[]{String.valueOf(e.getKey())});
-            }
+        // Addresses: optional map pin.
+        addColumnIfMissing(db, TABLE_ADDRESS, COL_LATITUDE, "REAL");
+        addColumnIfMissing(db, TABLE_ADDRESS, COL_LONGITUDE, "REAL");
 
-            createOrderTables(db); // created with the latest order schema, so skip the order ALTERs
+        // Orders.
+        if (!hasTable(db, TABLE_ORDER)) {
+            createOrderTables(db);
+        } else if (columnsOf(db, TABLE_ORDER).contains(LEGACY_ORDER_DATE)) {
+            migrateLegacyOrders(db);
         } else {
-            if (oldVersion < 3) {
-                db.execSQL("ALTER TABLE " + TABLE_ORDER + " ADD COLUMN " + COL_ORDER_PAYMENT_METHOD +
-                        " TEXT NOT NULL DEFAULT ''");
-                db.execSQL("ALTER TABLE " + TABLE_ORDER + " ADD COLUMN " + COL_ORDER_PAYMENT_REF + " TEXT");
-            }
-            if (oldVersion < 4) {
-                db.execSQL("ALTER TABLE " + TABLE_ORDER + " ADD COLUMN " + COL_ORDER_STATUS +
-                        " TEXT NOT NULL DEFAULT '" + OrderStatus.PLACED.name() + "'");
+            addColumnIfMissing(db, TABLE_ORDER, COL_ORDER_PAYMENT_METHOD, "TEXT NOT NULL DEFAULT ''");
+            addColumnIfMissing(db, TABLE_ORDER, COL_ORDER_PAYMENT_REF, "TEXT");
+            addColumnIfMissing(db, TABLE_ORDER, COL_ORDER_STATUS,
+                    "TEXT NOT NULL DEFAULT '" + OrderStatus.PLACED.name() + "'");
+        }
+    }
+
+    // Column names used by an earlier release of the app (orders table keyed by a text date).
+    private static final String LEGACY_ORDER_DATE = "order_date";
+    private static final String LEGACY_ORDER_TOTAL = "order_total";
+    private static final String LEGACY_ITEM_NAME = "item_name";
+    private static final String LEGACY_ITEM_PRICE = "item_price";
+    private static final String LEGACY_ITEM_QUANTITY = "item_quantity";
+
+    /** The first release created a test account ("user" / "password"); remove it if still present. */
+    private static void removeSeededTestAccount(SQLiteDatabase db) {
+        try (Cursor c = db.query(TABLE_CUSTOMER, new String[]{COL_CUSTOMER_ID},
+                COL_USERNAME + "=? AND " + COL_PASSWORD + "=?",
+                new String[]{"user", "password"}, null, null, null)) {
+            while (c.moveToNext()) {
+                String id = String.valueOf(c.getInt(0));
+                if (hasTable(db, TABLE_ORDER)) {
+                    // Delete that account's orders too (items go with them, or explicitly for old layouts).
+                    if (hasTable(db, TABLE_ORDER_ITEM)) {
+                        db.execSQL("DELETE FROM " + TABLE_ORDER_ITEM + " WHERE " + COL_ITEM_ORDER_ID +
+                                " IN (SELECT " + COL_ORDER_ID + " FROM " + TABLE_ORDER + " WHERE " +
+                                COL_ORDER_CUSTOMER_ID + "=?)", new Object[]{id});
+                    }
+                    db.delete(TABLE_ORDER, COL_ORDER_CUSTOMER_ID + "=?", new String[]{id});
+                }
+                db.delete(TABLE_ADDRESS, COL_ADDRESS_CUSTOMER_ID + "=?", new String[]{id});
+                db.delete(TABLE_CUSTOMER, COL_CUSTOMER_ID + "=?", new String[]{id});
             }
         }
-        if (oldVersion < 5) {
-            // The addresses table has existed since v1, so every older version needs these columns.
-            db.execSQL("ALTER TABLE " + TABLE_ADDRESS + " ADD COLUMN " + COL_LATITUDE + " REAL");
-            db.execSQL("ALTER TABLE " + TABLE_ADDRESS + " ADD COLUMN " + COL_LONGITUDE + " REAL");
+    }
+
+    /** Older releases stored passwords in plain text; replace them with salted hashes. */
+    private static void hashPlainTextPasswords(SQLiteDatabase db) {
+        Map<Integer, String> plain = new HashMap<>();
+        try (Cursor c = db.query(TABLE_CUSTOMER, new String[]{COL_CUSTOMER_ID, COL_PASSWORD},
+                null, null, null, null, null)) {
+            while (c.moveToNext()) {
+                String pw = c.getString(1);
+                if (!PasswordHasher.isHashed(pw)) {
+                    plain.put(c.getInt(0), pw);
+                }
+            }
+        }
+        for (Map.Entry<Integer, String> e : plain.entrySet()) {
+            ContentValues cv = new ContentValues();
+            cv.put(COL_PASSWORD, PasswordHasher.hash(e.getValue()));
+            db.update(TABLE_CUSTOMER, cv, COL_CUSTOMER_ID + "=?", new String[]{String.valueOf(e.getKey())});
+        }
+    }
+
+    /**
+     * Converts the earlier release's orders/order_items tables (text dates, item_* columns) into the
+     * current layout, keeping order ids. Those orders are months old, so they are marked delivered.
+     */
+    private void migrateLegacyOrders(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE " + TABLE_ORDER + " RENAME TO orders_legacy");
+        boolean hasItems = hasTable(db, TABLE_ORDER_ITEM);
+        if (hasItems) {
+            db.execSQL("ALTER TABLE " + TABLE_ORDER_ITEM + " RENAME TO order_items_legacy");
+        }
+        createOrderTables(db);
+
+        SimpleDateFormat legacyDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
+        try (Cursor c = db.rawQuery("SELECT * FROM orders_legacy", null)) {
+            while (c.moveToNext()) {
+                long createdAt;
+                try {
+                    Date d = legacyDate.parse(c.getString(c.getColumnIndexOrThrow(LEGACY_ORDER_DATE)));
+                    createdAt = d != null ? d.getTime() : System.currentTimeMillis();
+                } catch (ParseException | IllegalArgumentException e) {
+                    createdAt = System.currentTimeMillis();
+                }
+                int payIdx = c.getColumnIndex(COL_ORDER_PAYMENT_METHOD);
+                ContentValues cv = new ContentValues();
+                cv.put(COL_ORDER_ID, c.getLong(c.getColumnIndexOrThrow(COL_ORDER_ID)));
+                cv.put(COL_ORDER_CUSTOMER_ID, c.getInt(c.getColumnIndexOrThrow(COL_ORDER_CUSTOMER_ID)));
+                cv.put(COL_ORDER_TOTAL, c.getDouble(c.getColumnIndexOrThrow(LEGACY_ORDER_TOTAL)));
+                cv.put(COL_ORDER_ADDRESS, c.getString(c.getColumnIndexOrThrow(COL_ORDER_ADDRESS)));
+                cv.put(COL_ORDER_CREATED_AT, createdAt);
+                cv.put(COL_ORDER_PAYMENT_METHOD, payIdx >= 0 && !c.isNull(payIdx) ? c.getString(payIdx) : "");
+                cv.put(COL_ORDER_STATUS, OrderStatus.DELIVERED.name());
+                db.insertOrThrow(TABLE_ORDER, null, cv);
+            }
+        }
+
+        if (hasItems) {
+            try (Cursor c = db.rawQuery("SELECT * FROM order_items_legacy", null)) {
+                while (c.moveToNext()) {
+                    String name = c.getString(c.getColumnIndexOrThrow(LEGACY_ITEM_NAME));
+                    GroceryItem known = Catalog.find(name);
+                    ContentValues cv = new ContentValues();
+                    cv.put(COL_ITEM_ORDER_ID, c.getLong(c.getColumnIndexOrThrow(COL_ITEM_ORDER_ID)));
+                    cv.put(COL_ITEM_NAME, name);
+                    cv.put(COL_ITEM_PRICE, c.getDouble(c.getColumnIndexOrThrow(LEGACY_ITEM_PRICE)));
+                    cv.put(COL_ITEM_UNIT, known != null ? known.getUnit() : "kg");
+                    cv.put(COL_ITEM_QUANTITY, c.getInt(c.getColumnIndexOrThrow(LEGACY_ITEM_QUANTITY)));
+                    db.insertOrThrow(TABLE_ORDER_ITEM, null, cv);
+                }
+            }
+            db.execSQL("DROP TABLE order_items_legacy");
+        }
+        db.execSQL("DROP TABLE orders_legacy");
+    }
+
+    private static boolean hasTable(SQLiteDatabase db, String table) {
+        try (Cursor c = db.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                new String[]{table})) {
+            return c.moveToFirst();
+        }
+    }
+
+    private static Set<String> columnsOf(SQLiteDatabase db, String table) {
+        Set<String> cols = new HashSet<>();
+        try (Cursor c = db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+            int nameIdx = c.getColumnIndexOrThrow("name");
+            while (c.moveToNext()) {
+                cols.add(c.getString(nameIdx));
+            }
+        }
+        return cols;
+    }
+
+    private static void addColumnIfMissing(SQLiteDatabase db, String table, String column, String definition) {
+        if (!columnsOf(db, table).contains(column)) {
+            db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
         }
     }
 
