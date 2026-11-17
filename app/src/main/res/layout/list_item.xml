@@ -8,8 +8,8 @@
 
     <ImageView
         android:id="@+id/imgItem"
-        android:layout_width="80dp"
-        android:layout_height="80dp"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
         android:importantForAccessibility="no"
         android:scaleType="centerCrop" />
 
@@ -24,14 +24,16 @@
             android:id="@+id/txtItemName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="18sp"
+            android:breakStrategy="balanced"
+            android:hyphenationFrequency="normal"
+            android:textSize="16sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/txtPrice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="16sp" />
+            android:textSize="14sp" />
     </LinearLayout>
 
     <TextView
@@ -73,7 +75,7 @@
 
     <Button
         android:id="@+id/btnAdd"
-        android:layout_width="84dp"
+        android:layout_width="76dp"
         android:layout_height="wrap_content"
         android:backgroundTint="#4CAF50"
         android:text="Add"
